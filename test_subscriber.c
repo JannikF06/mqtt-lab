@@ -9,7 +9,7 @@
 #include <string.h>
 #include <mosquitto.h>
 
-#define BROKER  "test.mosquitto.org"
+#define BROKER  "localhost"
 #define PORT    1883
 #define TOPIC   "mqtt-lab/test/sensor"
 

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <time.h>
 #include <mosquitto.h>
@@ -102,7 +103,7 @@ void serialize_to_json(
         fprintf(stderr,
             "[Fehler] Stationsname ungültig\n");
 
-        strcpy(data->Stationsname, "IN");
+        strcpy(data->Stationsname, "000");
     }
 
     /* Zeitstempel prüfen */
@@ -124,11 +125,11 @@ void serialize_to_json(
         unsigned char c =
             (unsigned char)data->Sequenznummer[i];
 
-        if (c > 127) {
+        if (!isalnum(c)) {
             fprintf(stderr,
                 "[Fehler] Sequenznummer enthält Sonderzeichen\n");
 
-            strcpy(data->Sequenznummer, "INVALID");
+            strcpy(data->Sequenznummer, "000");
             break;
         }
     }
@@ -184,6 +185,83 @@ static void build_payload(
         dataGenerator(seq);
 
     serialize_to_json(&data, buf, len);
+}
+
+static void build_missing_field_payload(
+    char *buf,
+    size_t len,
+    int seq
+) {
+    time_t now = time(NULL);
+    struct tm *t = gmtime(&now);
+    char ts[32];
+
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", t);
+
+    snprintf(
+        buf,
+        len,
+        "{"
+        "\"Sequenznummer\":\"BAD-%d\","
+        "\"Stationsname\":\"S1\","
+        "\"Zeitstempel\":\"%s\","
+        "\"Temperatur\":22.5"
+        "}",
+        seq,
+        ts
+    );
+}
+
+static void build_out_of_range_payload(
+    char *buf,
+    size_t len,
+    int seq
+) {
+    time_t now = time(NULL);
+    struct tm *t = gmtime(&now);
+    char ts[32];
+
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", t);
+
+    snprintf(
+        buf,
+        len,
+        "{"
+        "\"Sequenznummer\":\"%d\","
+        "\"Stationsname\":\"S1\","
+        "\"Zeitstempel\":\"%s\","
+        "\"Temperatur\":150.0,"
+        "\"Luftfeuchtigkeit\":55.5"
+        "}",
+        seq,
+        ts
+    );
+}
+
+static void build_format_error_payload(
+    char *buf,
+    size_t len,
+    int seq
+) {
+    time_t now = time(NULL);
+    struct tm *t = gmtime(&now);
+    char ts[32];
+
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", t);
+
+    snprintf(
+        buf,
+        len,
+        "{"
+        "\"Sequenznummer\":\"BAD-%d\","
+        "\"Stationsname\":\"S1\","
+        "\"Zeitstempel\":\"%s\","
+        "\"Temperatur\":22.5,"
+        "\"Luftfeuchtigkeit\":55.5"
+        "}",
+        seq,
+        ts
+    );
 }
 
 /* ---------------- MQTT Callbacks ---------------- */
@@ -328,11 +406,31 @@ int mqtt_connect_and_publish()
     /* Nachrichten senden */
     for (int i = 1; i <= MSG_COUNT; i++) {
 
-        build_payload(
-            payload,
-            sizeof(payload),
-            i
-        );
+        if (i == 1) {
+            build_missing_field_payload(
+                payload,
+                sizeof(payload),
+                i
+            );
+        } else if (i == 2) {
+            build_out_of_range_payload(
+                payload,
+                sizeof(payload),
+                i
+            );
+        } else if (i == 3) {
+            build_format_error_payload(
+                payload,
+                sizeof(payload),
+                i
+            );
+        } else {
+            build_payload(
+                payload,
+                sizeof(payload),
+                i
+            );
+        }
 
         printf(
             "[publisher] Publishing: %s\n",
